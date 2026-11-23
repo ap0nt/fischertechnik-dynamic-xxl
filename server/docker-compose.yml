@@ -1,0 +1,50 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"
+    environment:
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+    command: ["sh", "/mosquitto/init.sh"]
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/init.sh:/mosquitto/init.sh:ro
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://mosquitto:9001
+    depends_on:
+      - mosquitto
+
+  minecraft:
+    image: itzg/minecraft-server:latest
+    ports:
+      - "25565:25565"
+    environment:
+      TZ: ${TZ}
+      EULA: TRUE
+      TYPE: PAPER
+      VERSION: "26.3"
+      MOTD: "Marbles"
+      LEVEL_TYPE: FLAT
+      GENERATE_STRUCTURES: "false"
+      RCON_CMDS_STARTUP: |-
+        gamerule spawn_mobs false
+        gamerule advance_time false
+        time set noon
+      MODE: creative
+      DIFFICULTY: peaceful
+      ENABLE_COMMAND_BLOCK: "true"
+      OPS: ${MINECRAFT_OPS}
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+    volumes:
+      - minecraft-data:/data
+      - ./minecraft/world:/data/world
+      - ./minecraft/plugins:/plugins:ro
+    depends_on:
+      - mosquitto
+
+volumes:
+  minecraft-data:

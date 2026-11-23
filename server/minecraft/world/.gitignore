@@ -1,0 +1,9 @@
+*
+!*/
+!.gitignore
+!*.mca
+players/
+entities/
+poi/
+the_nether/
+the_end/
