@@ -1,6 +1,15 @@
 #include <Arduino.h>
 #include <Servo.h>
 
+#include <WiFi.h>
+#include <WebSocketsClient.h>
+#include <MQTTPubSubClient.h>
+
+#include "arduino_secrets.h"
+
+const char ssid[] = SECRET_WIFI_SSID;
+const char pass[] = SECRET_WIFI_PASSWORD;
+
 int h1 = 12;
 
 int m1 = 4;
@@ -25,13 +34,112 @@ char loopingDirection = 'r';
 char twoLineDirection = 'l';
 char blockDirection = 'r';
 
+const int speakerPin = 15;  // CE / P15 am 8-poligen Anschluss
+
+// MQTT-WebSocket-Server
+const char MQTT_HOST[] = "greater-tribal-catalyst-interaction.trycloudflare.com";
+const uint16_t MQTT_PORT = 443;
+const char MQTT_PATH[] = "";
+
+// MQTT-Einstellungen
+const char MQTT_CLIENT_ID[] = "arduino";
+const char MQTT_PUBLISH_TOPIC[] = "marbles";
+const char MQTT_SUBSCRIBE_TOPIC[] = "marbles";
+
+WebSocketsClient webSocketClient;
+MQTTPubSubClient mqttClient;
+
+// Zeitsteuerung
+unsigned long letzteNachricht = 0;
+const unsigned long sendeIntervall = 5000;
+
+void verbindeWLAN()
+{
+  Serial.print("Verbinde mit WLAN: ");
+  Serial.println(SECRET_WIFI_SSID);
+
+  WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASSWORD);
+
+  unsigned long startzeit = millis();
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.print(".");
+    delay(500);
+
+    if (millis() - startzeit > 20000)
+    {
+      Serial.println();
+      Serial.println("WLAN-Verbindung fehlgeschlagen.");
+      return;
+    }
+  }
+
+  Serial.println();
+  Serial.println("WLAN verbunden.");
+
+  Serial.print("IP-Adresse: ");
+  Serial.println(WiFi.localIP());
+}
+
+void verbindeMQTT()
+{
+  if (mqttClient.isConnected())
+  {
+    return;
+  }
+
+  Serial.println("Verbinde MQTT ueber WebSocket ...");
+
+  bool verbunden = mqttClient.connect(
+    MQTT_CLIENT_ID,
+    SECRET_MQTT_USER,
+    SECRET_MQTT_PASSWORD
+  );
+
+  if (!verbunden)
+  {
+    Serial.println("MQTT-Verbindung fehlgeschlagen.");
+    return;
+  }
+
+  Serial.println("MQTT-Verbindung hergestellt.");
+
+  mqttClient.subscribe(
+    MQTT_SUBSCRIBE_TOPIC,
+    [](const String& payload, const size_t size)
+    {
+      Serial.print("Nachricht auf giga/befehl: ");
+      Serial.println(payload);
+
+      // Beispiel:
+      // Wenn "TON" empfangen wird, kann hier der Speaker
+      // eingeschaltet werden.
+      if (payload == "TON")
+      {
+        tone(15, 1000, 500);
+      }
+    }
+  );
+
+  Serial.print("Topic abonniert: ");
+  Serial.println(MQTT_SUBSCRIBE_TOPIC);
+}
+
 void playSound()
 {
-  tone(15, 1000);
-  delay(500);
+  pinMode(speakerPin, OUTPUT);
 
-  noTone(15);
-  delay(500);
+  tone(speakerPin, 500);   // Ton mit 1000 Hz
+  delay(200);
+  noTone(speakerPin);
+  delay(200);
+  tone(speakerPin, 500);   // Ton mit 1000 Hz
+  delay(200); 
+  tone(speakerPin, 1000);   // Ton mit 1000 Hz
+  delay(500);             // eine Sekunde abspielen
+
+  noTone(speakerPin);       // Ton ausschalten
 }
 
 void loopingSwitch()
@@ -91,6 +199,58 @@ void blockSwitch()
 
 void setup()
 {
+  //WLAN Verbingung VON HIER
+  Serial.begin(115200);
+
+  // Maximal 10 Sekunden auf den seriellen Monitor warten
+  unsigned long startzeit = millis();
+
+  while (!Serial && millis() - startzeit < 10000)
+  {
+    // warten
+  }
+
+  Serial.println();
+  Serial.println("Arduino GIGA R1 WiFi gestartet.");
+
+  // Prüfen, ob das WLAN-Modul erkannt wird
+  if (WiFi.status() == WL_NO_MODULE)
+  {
+    Serial.println("Fehler: WLAN-Modul wurde nicht erkannt.");
+
+    while (true)
+    {
+      delay(1000);
+    }
+  }
+
+  Serial.print("Verbinde mit WLAN: ");
+  Serial.println(ssid);
+
+  int status = WL_IDLE_STATUS;
+
+  // Mehrfach versuchen, das WLAN zu verbinden
+  while (status != WL_CONNECTED)
+  {
+    status = WiFi.begin(ssid, pass);
+
+    Serial.print(".");
+    delay(3000);
+  }
+
+  Serial.println();
+  Serial.println("WLAN-Verbindung hergestellt!");
+
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
+
+  Serial.print("IP-Adresse: ");
+  Serial.println(WiFi.localIP());
+
+  Serial.print("Signalstaerke: ");
+  Serial.print(WiFi.RSSI());
+  Serial.println(" dBm");
+  //WLAN Verbingung BIS HIER
   pinMode(m1, OUTPUT);
   pinMode(m2, OUTPUT);
   pinMode(m3_1, OUTPUT);
@@ -128,6 +288,8 @@ void setup()
   Servo1.write(0);
   delay(750);
   blockSwitch();
+
+  playSound();
 }
 
 void loop()
@@ -146,7 +308,6 @@ void loop()
   if (tip4State == LOW)
     loopingSwitch();
 
-  // playSound();
 
   //Serial.println(digitalRead(h1));
 }
